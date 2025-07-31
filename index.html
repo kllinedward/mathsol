@@ -111,6 +111,11 @@
             margin-bottom: 15px;
         }
 
+        .admin-section h4 {
+            color: #856404;
+            margin-bottom: 15px;
+        }
+
         .form-group {
             margin-bottom: 15px;
         }
@@ -140,6 +145,8 @@
             font-size: 1rem;
             font-weight: bold;
             transition: all 0.3s ease;
+            margin-right: 10px;
+            margin-bottom: 10px;
         }
 
         .btn:hover {
@@ -153,6 +160,14 @@
 
         .btn-danger:hover {
             box-shadow: 0 5px 15px rgba(220, 53, 69, 0.4);
+        }
+
+        .btn-success {
+            background: linear-gradient(45deg, #28a745, #20c997);
+        }
+
+        .btn-success:hover {
+            box-shadow: 0 5px 15px rgba(40, 167, 69, 0.4);
         }
 
         .file-section {
@@ -232,6 +247,15 @@
             background: #1e7e34;
         }
 
+        .delete-btn {
+            background: #dc3545;
+            color: white;
+        }
+
+        .delete-btn:hover {
+            background: #c82333;
+        }
+
         .loading {
             color: #666;
             font-style: italic;
@@ -241,56 +265,24 @@
             display: none;
         }
 
-        .pdf-viewer {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            margin-top: 20px;
-            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
-        }
-
-        .pdf-controls {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-
-        .pdf-controls button {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 0.9rem;
-        }
-
-        .pdf-controls button:hover {
-            background: #5a6fd8;
-        }
-
-        .pdf-controls button:disabled {
-            background: #ccc;
-            cursor: not-allowed;
-        }
-
-        #pdfCanvas {
-            max-width: 100%;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            display: block;
-            margin: 0 auto;
-        }
-
         .admin-hint {
             text-align: center;
             color: #666;
             font-size: 0.9rem;
             margin-top: 10px;
             font-style: italic;
+        }
+
+        .upload-status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            display: none;
+        }
+
+        hr {
+            margin: 20px 0;
+            border: 1px solid #ddd;
         }
 
         @media (max-width: 768px) {
@@ -307,9 +299,8 @@
                 flex-direction: column;
             }
 
-            .pdf-controls {
-                flex-direction: column;
-                gap: 10px;
+            .btn {
+                margin-right: 0;
             }
         }
     </style>
@@ -322,8 +313,9 @@
             <h3>🎯 系統功能說明</h3>
             <ul>
                 <li><strong>學生用戶</strong>：可以瀏覽、線上檢視和下載所有教材檔案。</li>
-                <li><strong>管理員</strong>：登入後可以設定GitHub儲存庫並上傳教材檔案。</li>
+                <li><strong>管理員</strong>：登入後可以設定GitHub儲存庫、上傳和管理教材檔案。</li>
                 <li><strong>檔案格式</strong>：支援PDF格式的教材檔案，檔案將儲存在GitHub上供所有人下載。</li>
+                <li><strong>線上檢視</strong>：PDF檔案可在新視窗中線上檢視，支援翻頁和縮放功能。</li>
             </ul>
         </div>
 
@@ -349,7 +341,19 @@
                 <input type="password" id="githubToken" placeholder="ghp_xxxxxxxxxxxx">
             </div>
             <button class="btn" onclick="saveConfig()">💾 儲存設定</button>
-            <button class="btn btn-danger" onclick="logout()" style="margin-left: 10px;">🚪 登出</button>
+            <button class="btn btn-danger" onclick="logout()">🚪 登出</button>
+            
+            <hr>
+            
+            <div id="fileUploadSection">
+                <h4>📤 上傳新檔案</h4>
+                <div class="form-group">
+                    <label for="fileInput">選擇PDF檔案：</label>
+                    <input type="file" id="fileInput" accept=".pdf">
+                </div>
+                <button class="btn btn-success" onclick="uploadFile()">📤 上傳檔案</button>
+                <div id="uploadStatus" class="upload-status"></div>
+            </div>
         </div>
 
         <div class="file-section">
@@ -362,19 +366,6 @@
             </div>
             
             <div id="fileList" class="file-list"></div>
-        </div>
-
-        <div id="pdfViewer" class="pdf-viewer hidden">
-            <div class="pdf-controls">
-                <button onclick="closePdfViewer()">❌ 關閉檢視器</button>
-                <button id="prevPageBtn" onclick="prevPage()">⬅️ 上一頁</button>
-                <span id="pageInfo">第 1 頁，共 1 頁</span>
-                <button id="nextPageBtn" onclick="nextPage()">➡️ 下一頁</button>
-                <button onclick="zoomOut()">🔍➖ 縮小</button>
-                <span id="zoomInfo">100%</span>
-                <button onclick="zoomIn()">🔍➕ 放大</button>
-            </div>
-            <canvas id="pdfCanvas"></canvas>
         </div>
     </div>
 
@@ -389,12 +380,7 @@
         let state = {
             isAdmin: false,
             files: [],
-            config: { owner: '', repo: '', token: '' },
-            currentPdf: null,
-            currentPage: 1,
-            totalPages: 0,
-            scale: 1.0,
-            currentFileIndex: -1
+            config: { owner: '', repo: '', token: '' }
         };
 
         // 初始化應用程式
@@ -470,6 +456,9 @@
             
             state.files.forEach((file, i) => {
                 const fileSize = file.size ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : '未知大小';
+                const deleteBtn = state.isAdmin ? 
+                    `<button class="action-btn delete-btn" onclick="deleteFile(${i})">🗑️ 刪除</button>` : '';
+                
                 html += `
                     <div class="file-item">
                         <div class="file-name">📄 ${file.name}</div>
@@ -477,6 +466,7 @@
                         <div class="file-actions">
                             <button class="action-btn view-btn" onclick="viewPdf(${i})">👁️ 線上檢視</button>
                             <a class="action-btn download-btn" href="${file.download_url}" download="${file.name}">⬇️ 下載檔案</a>
+                            ${deleteBtn}
                         </div>
                     </div>
                 `;
@@ -509,6 +499,7 @@
             document.getElementById('adminLoginSection').classList.add('hidden');
             document.getElementById('adminSection').classList.remove('hidden');
             fillAdminForm();
+            updateFileList(); // 重新渲染檔案列表以顯示刪除按鈕
         }
 
         // 隱藏管理員區域
@@ -548,6 +539,7 @@
             localStorage.removeItem('adminPassword');
             state.isAdmin = false;
             hideAdminSection();
+            updateFileList(); // 重新渲染檔案列表以隱藏刪除按鈕
             alert('已登出管理員模式');
         }
 
@@ -568,135 +560,429 @@
             }
         }
 
-        // PDF檢視功能
-        async function viewPdf(fileIndex) {
+        // 上傳檔案功能
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const uploadStatus = document.getElementById('uploadStatus');
+            
+            if (!fileInput.files || !fileInput.files[0]) {
+                alert('請選擇一個PDF檔案');
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            
+            // 檢查檔案類型
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                alert('只能上傳PDF檔案');
+                return;
+            }
+            
+            // 檢查檔案大小（限制為50MB）
+            if (file.size > 50 * 1024 * 1024) {
+                alert('檔案大小不能超過50MB');
+                return;
+            }
+            
+            const config = state.config;
+            if (!config.token) {
+                alert('請先設定GitHub Personal Access Token');
+                return;
+            }
+            
+            // 顯示上傳狀態
+            uploadStatus.style.display = 'block';
+            uploadStatus.style.background = '#cce5ff';
+            uploadStatus.style.color = '#004085';
+            uploadStatus.innerHTML = '📤 正在上傳檔案...';
+            
             try {
-                state.currentFileIndex = fileIndex;
-                const file = state.files[fileIndex];
-                console.log('準備檢視PDF:', file.name);
+                // 將檔案轉換為base64
+                const base64Content = await fileToBase64(file);
                 
-                // 顯示檢視器
-                document.getElementById('pdfViewer').classList.remove('hidden');
+                // 上傳到GitHub
+                const response = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/files/${file.name}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `token ${config.token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: `上傳檔案: ${file.name}`,
+                        content: base64Content
+                    })
+                });
                 
-                // 載入PDF
-                const response = await fetch(file.download_url);
-                const arrayBuffer = await response.arrayBuffer();
-                
-                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-                state.currentPdf = pdf;
-                state.totalPages = pdf.numPages;
-                state.currentPage = 1;
-                state.scale = 1.0;
-                
-                console.log('PDF載入成功，總頁數:', state.totalPages);
-                
-                // 渲染第一頁
-                renderPage();
-                updatePdfControls();
+                if (response.ok) {
+                    uploadStatus.style.background = '#d4edda';
+                    uploadStatus.style.color = '#155724';
+                    uploadStatus.innerHTML = '✅ 檔案上傳成功！';
+                    
+                    // 清空檔案選擇
+                    fileInput.value = '';
+                    
+                    // 重新載入檔案列表
+                    setTimeout(() => {
+                        loadFileList();
+                        uploadStatus.style.display = 'none';
+                    }, 2000);
+                    
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || '上傳失敗');
+                }
                 
             } catch (error) {
-                console.error('PDF載入失敗:', error);
-                alert('PDF載入失敗，請稍後再試');
+                console.error('上傳失敗:', error);
+                uploadStatus.style.background = '#f8d7da';
+                uploadStatus.style.color = '#721c24';
+                uploadStatus.innerHTML = '❌ 上傳失敗: ' + error.message;
             }
         }
 
-        // 渲染PDF頁面
-        async function renderPage() {
-            if (!state.currentPdf) return;
+        // 刪除檔案功能
+        async function deleteFile(fileIndex) {
+            const file = state.files[fileIndex];
+            if (!file) {
+                alert('檔案不存在');
+                return;
+            }
+            
+            // 確認刪除
+            if (!confirm(`確定要刪除檔案 "${file.name}" 嗎？\n\n⚠️ 此操作無法復原！`)) {
+                return;
+            }
+            
+            const config = state.config;
+            if (!config.token) {
+                alert('請先設定GitHub Personal Access Token');
+                return;
+            }
             
             try {
-                const page = await state.currentPdf.getPage(state.currentPage);
+                // 獲取檔案的SHA值（刪除時需要）
+                const fileResponse = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/files/${file.name}`, {
+                    headers: {
+                        'Authorization': `token ${config.token}`
+                    }
+                });
+                
+                if (!fileResponse.ok) {
+                    throw new Error('無法獲取檔案資訊');
+                }
+                
+                const fileData = await fileResponse.json();
+                
+                // 刪除檔案
+                const deleteResponse = await fetch(`https://api.github.com/repos/${config.owner}/${config.repo}/contents/files/${file.name}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `token ${config.token}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        message: `刪除檔案: ${file.name}`,
+                        sha: fileData.sha
+                    })
+                });
+                
+                if (deleteResponse.ok) {
+                    alert('檔案刪除成功！');
+                    // 重新載入檔案列表
+                    loadFileList();
+                } else {
+                    const errorData = await deleteResponse.json();
+                    throw new Error(errorData.message || '刪除失敗');
+                }
+                
+            } catch (error) {
+                console.error('刪除失敗:', error);
+                alert('刪除失敗: ' + error.message);
+            }
+        }
+
+        // PDF檢視功能（新視窗）
+        function viewPdf(fileIndex) {
+            const file = state.files[fileIndex];
+            if (!file) {
+                alert('檔案不存在');
+                return;
+            }
+            
+            console.log('準備在新視窗檢視PDF:', file.name);
+            
+            // 創建新視窗的HTML內容
+            const newWindowHtml = `
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF檢視器 - ${file.name}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f5f5;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .pdf-header {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 15px 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .pdf-title {
+            font-size: 1.2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .pdf-controls {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            background: white;
+            padding: 15px;
+            border-bottom: 1px solid #ddd;
+            flex-wrap: wrap;
+        }
+        
+        .pdf-controls button, .pdf-controls a {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .pdf-controls button:hover, .pdf-controls a:hover {
+            background: #5a6fd8;
+        }
+        
+        .pdf-controls button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .pdf-controls .download-btn {
+            background: #28a745;
+        }
+        
+        .pdf-controls .download-btn:hover {
+            background: #1e7e34;
+        }
+        
+        .pdf-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            overflow: auto;
+        }
+        
+        #pdfCanvas {
+            max-width: 100%;
+            max-height: 100%;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            background: white;
+        }
+        
+        .loading {
+            text-align: center;
+            color: #666;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="pdf-header">
+        <div class="pdf-title">📄 ${file.name}</div>
+        <div style="font-size: 0.9rem; opacity: 0.9;">檔案大小: ${file.size ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : '未知大小'}</div>
+    </div>
+    
+    <div class="pdf-controls">
+        <button onclick="window.close()">❌ 關閉視窗</button>
+        <button id="prevPageBtn" onclick="prevPage()">⬅️ 上一頁</button>
+        <span id="pageInfo">載入中...</span>
+        <button id="nextPageBtn" onclick="nextPage()">➡️ 下一頁</button>
+        <button onclick="zoomOut()">🔍➖ 縮小</button>
+        <span id="zoomInfo">100%</span>
+        <button onclick="zoomIn()">🔍➕ 放大</button>
+        <a href="${file.download_url}" download="${file.name}" class="download-btn">⬇️ 下載</a>
+    </div>
+    
+    <div class="pdf-container">
+        <div id="loadingMessage" class="loading">📄 正在載入PDF檔案...</div>
+        <canvas id="pdfCanvas" style="display: none;"></canvas>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        // 設定 PDF.js worker
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let pdfDoc = null;
+        let currentPage = 1;
+        let totalPages = 0;
+        let scale = 1.0;
+
+        // 載入PDF
+        async function loadPdf() {
+            try {
+                const response = await fetch('${file.download_url}');
+                const arrayBuffer = await response.arrayBuffer();
+                
+                pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;
+                totalPages = pdfDoc.numPages;
+                
+                document.getElementById('loadingMessage').style.display = 'none';
+                document.getElementById('pdfCanvas').style.display = 'block';
+                
+                renderPage();
+                updateControls();
+                
+            } catch (error) {
+                console.error('PDF載入失敗:', error);
+                document.getElementById('loadingMessage').innerHTML = '❌ PDF載入失敗，請稍後再試';
+            }
+        }
+
+        // 渲染頁面
+        async function renderPage() {
+            if (!pdfDoc) return;
+            
+            try {
+                const page = await pdfDoc.getPage(currentPage);
                 const canvas = document.getElementById('pdfCanvas');
                 const context = canvas.getContext('2d');
                 
-                const viewport = page.getViewport({ scale: state.scale });
+                const viewport = page.getViewport({ scale: scale });
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
                 
-                const renderContext = {
+                await page.render({
                     canvasContext: context,
                     viewport: viewport
-                };
-                
-                await page.render(renderContext).promise;
-                console.log('頁面渲染完成:', state.currentPage);
+                }).promise;
                 
             } catch (error) {
                 console.error('頁面渲染失敗:', error);
             }
         }
 
-        // 更新PDF控制項
-        function updatePdfControls() {
-            document.getElementById('pageInfo').textContent = `第 ${state.currentPage} 頁，共 ${state.totalPages} 頁`;
-            document.getElementById('zoomInfo').textContent = `${Math.round(state.scale * 100)}%`;
+        // 更新控制項
+        function updateControls() {
+            document.getElementById('pageInfo').textContent = \`第 \${currentPage} 頁，共 \${totalPages} 頁\`;
+            document.getElementById('zoomInfo').textContent = \`\${Math.round(scale * 100)}%\`;
             
-            document.getElementById('prevPageBtn').disabled = state.currentPage <= 1;
-            document.getElementById('nextPageBtn').disabled = state.currentPage >= state.totalPages;
+            document.getElementById('prevPageBtn').disabled = currentPage <= 1;
+            document.getElementById('nextPageBtn').disabled = currentPage >= totalPages;
         }
 
         // 上一頁
         function prevPage() {
-            if (state.currentPage > 1) {
-                state.currentPage--;
+            if (currentPage > 1) {
+                currentPage--;
                 renderPage();
-                updatePdfControls();
+                updateControls();
             }
         }
 
         // 下一頁
         function nextPage() {
-            if (state.currentPage < state.totalPages) {
-                state.currentPage++;
+            if (currentPage < totalPages) {
+                currentPage++;
                 renderPage();
-                updatePdfControls();
+                updateControls();
             }
         }
 
         // 放大
         function zoomIn() {
-            state.scale *= 1.25;
+            scale *= 1.25;
             renderPage();
-            updatePdfControls();
+            updateControls();
         }
 
         // 縮小
         function zoomOut() {
-            state.scale /= 1.25;
+            scale /= 1.25;
             renderPage();
-            updatePdfControls();
-        }
-
-        // 關閉PDF檢視器
-        function closePdfViewer() {
-            document.getElementById('pdfViewer').classList.add('hidden');
-            state.currentPdf = null;
-            state.currentFileIndex = -1;
+            updateControls();
         }
 
         // 鍵盤快捷鍵
         document.addEventListener('keydown', function(e) {
-            if (state.currentPdf) {
-                switch(e.key) {
-                    case 'ArrowLeft':
-                        prevPage();
-                        break;
-                    case 'ArrowRight':
-                        nextPage();
-                        break;
-                    case 'Escape':
-                        closePdfViewer();
-                        break;
-                    case '+':
-                    case '=':
-                        zoomIn();
-                        break;
-                    case '-':
-                        zoomOut();
-                        break;
-                }
+            switch(e.key) {
+                case 'ArrowLeft':
+                    prevPage();
+                    break;
+                case 'ArrowRight':
+                    nextPage();
+                    break;
+                case 'Escape':
+                    window.close();
+                    break;
+                case '+':
+                case '=':
+                    zoomIn();
+                    break;
+                case '-':
+                    zoomOut();
+                    break;
             }
         });
+
+        // 頁面載入完成後開始載入PDF
+        window.addEventListener('load', loadPdf);
+    </script>
+</body>
+</html>
+            `;
+            
+            // 開啟新視窗
+            const newWindow = window.open('', '_blank', 'width=1000,height=700,scrollbars=yes,resizable=yes');
+            if (newWindow) {
+                newWindow.document.write(newWindowHtml);
+                newWindow.document.close();
+                console.log('新視窗已開啟');
+            } else {
+                alert('無法開啟新視窗，請檢查瀏覽器的彈出視窗設定');
+            }
+        }
+
+        // 輔助函數：將檔案轉換為base64
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function() {
+                    // 移除data:application/pdf;base64,前綴
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
     </script>
 </body>
 </html>
