@@ -285,6 +285,59 @@
             border: 1px solid #ddd;
         }
 
+        /* PDF預覽區域 */
+        .pdf-preview {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            display: none;
+        }
+
+        .pdf-viewer-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .pdf-controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .pdf-controls button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        .pdf-controls button:hover {
+            background: #0056b3;
+        }
+
+        .pdf-controls button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        #pdfCanvas {
+            max-width: 100%;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            display: block;
+            margin: 0 auto;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 20px;
@@ -315,7 +368,7 @@
                 <li><strong>學生用戶</strong>：可以瀏覽、線上檢視和下載所有教材檔案。</li>
                 <li><strong>管理員</strong>：登入後可以設定GitHub儲存庫、上傳和管理教材檔案。</li>
                 <li><strong>檔案格式</strong>：支援PDF格式的教材檔案，檔案將儲存在GitHub上供所有人下載。</li>
-                <li><strong>線上檢視</strong>：PDF檔案可在新視窗中線上檢視，支援翻頁和縮放功能。</li>
+                <li><strong>線上檢視</strong>：PDF檔案可在頁面內線上檢視，支援翻頁和縮放功能。</li>
             </ul>
         </div>
 
@@ -367,6 +420,25 @@
             
             <div id="fileList" class="file-list"></div>
         </div>
+
+        <!-- PDF預覽區域 -->
+        <div id="pdfPreview" class="pdf-preview">
+            <div class="pdf-viewer-header">
+                <h3 id="pdfTitle">PDF檢視器</h3>
+                <button onclick="closePdfViewer()" style="background: #dc3545; color: white; border: none; padding: 5px 10px; border-radius: 3px; cursor: pointer;">❌ 關閉</button>
+            </div>
+            <div class="pdf-controls">
+                <button id="prevPage" onclick="showPrevPage()">⬅️ 上一頁</button>
+                <span id="pageInfo">第 1 頁</span>
+                <button id="nextPage" onclick="showNextPage()">➡️ 下一頁</button>
+                <button onclick="zoomOut()">🔍➖</button>
+                <span id="zoomLevel">100%</span>
+                <button onclick="zoomIn()">🔍➕</button>
+            </div>
+            <div style="margin-top: 15px; text-align: center;">
+                <canvas id="pdfCanvas"></canvas>
+            </div>
+        </div>
     </div>
 
     <!-- PDF.js -->
@@ -380,7 +452,11 @@
         let state = {
             isAdmin: false,
             files: [],
-            config: { owner: '', repo: '', token: '' }
+            config: { owner: '', repo: '', token: '' },
+            currentPdf: null,
+            currentPage: 1,
+            totalPages: 0,
+            scale: 1.0
         };
 
         // 初始化應用程式
@@ -664,127 +740,100 @@
             }
         }
 
-        function viewPdf(fileIndex) {
+        // PDF檢視功能
+        async function viewPdf(fileIndex) {
             const file = state.files[fileIndex];
             if (!file) {
                 alert('檔案不存在');
                 return;
             }
             
-            console.log('準備在新視窗檢視PDF:', file.name);
+            console.log('開始載入PDF:', file.name);
+            document.getElementById('pdfTitle').textContent = '📄 ' + file.name;
+            document.getElementById('pdfPreview').style.display = 'block';
             
-            // 建立新視窗HTML
-            const fileSize = file.size ? (file.size / 1024 / 1024).toFixed(2) + ' MB' : '未知大小';
-            const downloadUrl = file.download_url;
-            const fileName = file.name;
+            // 滾動到PDF檢視區域
+            document.getElementById('pdfPreview').scrollIntoView({ behavior: 'smooth' });
             
-            const newWindow = window.open('', '_blank', 'width=1000,height=700,scrollbars=yes,resizable=yes');
-            if (!newWindow) {
-                alert('無法開啟新視窗，請檢查瀏覽器的彈出視窗設定');
-                return;
+            try {
+                const response = await fetch(file.download_url);
+                const arrayBuffer = await response.arrayBuffer();
+                
+                state.currentPdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                state.totalPages = state.currentPdf.numPages;
+                state.currentPage = 1;
+                state.scale = 1.0;
+                
+                renderPdfPage();
+                updatePdfControls();
+                
+            } catch (error) {
+                console.error('PDF載入失敗:', error);
+                alert('PDF載入失敗: ' + error.message);
             }
-            
-            newWindow.document.write(createPdfViewerHtml(fileName, fileSize, downloadUrl));
-            newWindow.document.close();
-            console.log('新視窗已開啟');
         }
 
-        function createPdfViewerHtml(fileName, fileSize, downloadUrl) {
-            return '<!DOCTYPE html>' +
-'<html lang="zh-TW">' +
-'<head>' +
-    '<meta charset="UTF-8">' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
-    '<title>PDF檢視器 - ' + fileName + '</title>' +
-    '<style>' +
-        '* { margin: 0; padding: 0; box-sizing: border-box; }' +
-        'body { font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; height: 100vh; display: flex; flex-direction: column; }' +
-        '.pdf-header { background: linear-gradient(45deg, #667eea, #764ba2); color: white; padding: 15px 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }' +
-        '.pdf-title { font-size: 1.2rem; font-weight: bold; margin-bottom: 5px; }' +
-        '.pdf-controls { display: flex; justify-content: center; align-items: center; gap: 15px; background: white; padding: 15px; border-bottom: 1px solid #ddd; flex-wrap: wrap; }' +
-        '.pdf-controls button, .pdf-controls a { background: #667eea; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-size: 0.9rem; transition: background 0.3s; text-decoration: none; display: inline-block; }' +
-        '.pdf-controls button:hover, .pdf-controls a:hover { background: #5a6fd8; }' +
-        '.pdf-controls button:disabled { background: #ccc; cursor: not-allowed; }' +
-        '.pdf-controls .download-btn { background: #28a745; }' +
-        '.pdf-controls .download-btn:hover { background: #1e7e34; }' +
-        '.pdf-container { flex: 1; display: flex; justify-content: center; align-items: center; padding: 20px; overflow: auto; }' +
-        '#pdfCanvas { max-width: 100%; max-height: 100%; border: 1px solid #ddd; border-radius: 5px; box-shadow: 0 5px 15px rgba(0,0,0,0.2); background: white; }' +
-        '.loading { text-align: center; color: #666; font-size: 1.1rem; }' +
-    '</style>' +
-'</head>' +
-'<body>' +
-    '<div class="pdf-header">' +
-        '<div class="pdf-title">📄 ' + fileName + '</div>' +
-        '<div style="font-size: 0.9rem; opacity: 0.9;">檔案大小: ' + fileSize + '</div>' +
-    '</div>' +
-    '<div class="pdf-controls">' +
-        '<button onclick="window.close()">❌ 關閉視窗</button>' +
-        '<button id="prevPageBtn" onclick="prevPage()">⬅️ 上一頁</button>' +
-        '<span id="pageInfo">載入中...</span>' +
-        '<button id="nextPageBtn" onclick="nextPage()">➡️ 下一頁</button>' +
-        '<button onclick="zoomOut()">🔍➖ 縮小</button>' +
-        '<span id="zoomInfo">100%</span>' +
-        '<button onclick="zoomIn()">🔍➕ 放大</button>' +
-        '<a href="' + downloadUrl + '" download="' + fileName + '" class="download-btn">⬇️ 下載</a>' +
-    '</div>' +
-    '<div class="pdf-container">' +
-        '<div id="loadingMessage" class="loading">📄 正在載入PDF檔案...</div>' +
-        '<canvas id="pdfCanvas" style="display: none;"></canvas>' +
-    '</div>' +
-    '<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>' +
-    '<script>' +
-        'pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";' +
-        'let pdfDoc = null; let currentPage = 1; let totalPages = 0; let scale = 1.0;' +
-        'async function loadPdf() {' +
-            'try {' +
-                'const response = await fetch("' + downloadUrl + '");' +
-                'const arrayBuffer = await response.arrayBuffer();' +
-                'pdfDoc = await pdfjsLib.getDocument(arrayBuffer).promise;' +
-                'totalPages = pdfDoc.numPages;' +
-                'document.getElementById("loadingMessage").style.display = "none";' +
-                'document.getElementById("pdfCanvas").style.display = "block";' +
-                'renderPage(); updateControls();' +
-            '} catch (error) {' +
-                'console.error("PDF載入失敗:", error);' +
-                'document.getElementById("loadingMessage").innerHTML = "❌ PDF載入失敗，請稍後再試";' +
-            '}' +
-        '}' +
-        'async function renderPage() {' +
-            'if (!pdfDoc) return;' +
-            'try {' +
-                'const page = await pdfDoc.getPage(currentPage);' +
-                'const canvas = document.getElementById("pdfCanvas");' +
-                'const context = canvas.getContext("2d");' +
-                'const viewport = page.getViewport({ scale: scale });' +
-                'canvas.height = viewport.height; canvas.width = viewport.width;' +
-                'await page.render({ canvasContext: context, viewport: viewport }).promise;' +
-            '} catch (error) {' +
-                'console.error("頁面渲染失敗:", error);' +
-            '}' +
-        '}' +
-        'function updateControls() {' +
-            'document.getElementById("pageInfo").textContent = "第 " + currentPage + " 頁，共 " + totalPages + " 頁";' +
-            'document.getElementById("zoomInfo").textContent = Math.round(scale * 100) + "%";' +
-            'document.getElementById("prevPageBtn").disabled = currentPage <= 1;' +
-            'document.getElementById("nextPageBtn").disabled = currentPage >= totalPages;' +
-        '}' +
-        'function prevPage() { if (currentPage > 1) { currentPage--; renderPage(); updateControls(); } }' +
-        'function nextPage() { if (currentPage < totalPages) { currentPage++; renderPage(); updateControls(); } }' +
-        'function zoomIn() { scale *= 1.25; renderPage(); updateControls(); }' +
-        'function zoomOut() { scale /= 1.25; renderPage(); updateControls(); }' +
-        'document.addEventListener("keydown", function(e) {' +
-            'switch(e.key) {' +
-                'case "ArrowLeft": prevPage(); break;' +
-                'case "ArrowRight": nextPage(); break;' +
-                'case "Escape": window.close(); break;' +
-                'case "+": case "=": zoomIn(); break;' +
-                'case "-": zoomOut(); break;' +
-            '}' +
-        '});' +
-        'window.addEventListener("load", loadPdf);' +
-    '</script>' +
-'</body>' +
-'</html>';
+        async function renderPdfPage() {
+            if (!state.currentPdf) return;
+            
+            try {
+                const page = await state.currentPdf.getPage(state.currentPage);
+                const canvas = document.getElementById('pdfCanvas');
+                const context = canvas.getContext('2d');
+                
+                const viewport = page.getViewport({ scale: state.scale });
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                await page.render({
+                    canvasContext: context,
+                    viewport: viewport
+                }).promise;
+                
+            } catch (error) {
+                console.error('頁面渲染失敗:', error);
+            }
+        }
+
+        function updatePdfControls() {
+            document.getElementById('pageInfo').textContent = '第 ' + state.currentPage + ' 頁，共 ' + state.totalPages + ' 頁';
+            document.getElementById('zoomLevel').textContent = Math.round(state.scale * 100) + '%';
+            
+            document.getElementById('prevPage').disabled = state.currentPage <= 1;
+            document.getElementById('nextPage').disabled = state.currentPage >= state.totalPages;
+        }
+
+        function showPrevPage() {
+            if (state.currentPage > 1) {
+                state.currentPage--;
+                renderPdfPage();
+                updatePdfControls();
+            }
+        }
+
+        function showNextPage() {
+            if (state.currentPage < state.totalPages) {
+                state.currentPage++;
+                renderPdfPage();
+                updatePdfControls();
+            }
+        }
+
+        function zoomIn() {
+            state.scale *= 1.25;
+            renderPdfPage();
+            updatePdfControls();
+        }
+
+        function zoomOut() {
+            state.scale /= 1.25;
+            renderPdfPage();
+            updatePdfControls();
+        }
+
+        function closePdfViewer() {
+            document.getElementById('pdfPreview').style.display = 'none';
+            state.currentPdf = null;
         }
 
         function fileToBase64(file) {
@@ -798,6 +847,30 @@
                 reader.readAsDataURL(file);
             });
         }
+
+        // 鍵盤快捷鍵
+        document.addEventListener('keydown', function(e) {
+            if (document.getElementById('pdfPreview').style.display === 'block') {
+                switch(e.key) {
+                    case 'ArrowLeft':
+                        showPrevPage();
+                        break;
+                    case 'ArrowRight':
+                        showNextPage();
+                        break;
+                    case 'Escape':
+                        closePdfViewer();
+                        break;
+                    case '+':
+                    case '=':
+                        zoomIn();
+                        break;
+                    case '-':
+                        zoomOut();
+                        break;
+                }
+            }
+        });
     </script>
 </body>
 </html>
